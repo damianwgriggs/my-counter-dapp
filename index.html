@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuji Counter DApp</title>
+    <style>
+        /* CSS for a clean, simple interface */
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 400px; margin: 40px auto; padding: 25px; background: white; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
+        button { padding: 12px 25px; margin: 10px 5px; cursor: pointer; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; transition: background-color 0.3s, transform 0.1s; }
+        button:active { transform: scale(0.98); }
+        #connectWalletBtn { background-color: #dc3545; color: white; } /* Changed color to red to indicate link */
+        #incrementBtn { background-color: #28a745; color: white; font-size: 24px; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #status { margin-top: 20px; font-weight: 500; color: #555; min-height: 20px; }
+        #countDisplay { font-size: 60px; font-weight: bold; margin: 20px 0; color: #DC3545; }
+        .info { margin-top: 10px; font-size: 14px; color: #6c757d; }
+        .warning { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fuji Counter DApp</h1>
+
+        <button id="connectWalletBtn">CLICK TO CONNECT WALLET</button>
+        <p class="info" id="walletInfo">Wallet Status: Disconnected.</p>
+        <hr>
+
+        <h2>Current Count:</h2>
+        <div id="countDisplay">...</div>
+        
+        <button id="incrementBtn" disabled>+ Increment</button>
+
+        <p id="status">Loading initial count...</p>
+        <p class="info">Network: Avalanche Fuji Testnet</p>
+    </div>
+
+    <script>
+        // 1. --- CONTRACT CONFIGURATION ---
+        const CONTRACT_ADDRESS = "0x689EB1ceFa6EdB474814f04A7B6357c8Ea0Dfbcc"; 
+        const GET_COUNT_SIG = '0xa87d942c'; 
+        const INCREMENT_SIG = '0xd09de08a'; 
+
+        const FUJI_CHAIN_ID_HEX = '0xa869';
+        const FUJI_RPC_URL = 'https://api.avax-test.network/ext/bc/C/rpc';
+        
+        // **!!! CRITICAL: PASTE YOUR PUBLIC HOSTED URL HERE !!!**
+        // This is the public URL of the "dapp.html" file you saved/hosted.
+        const DAPP_PUBLIC_URL = "PASTE_YOUR_PUBLIC_HOSTED_DAPP_URL_HERE"; 
+        
+        // 2. --- STATE VARIABLES & DOM ELEMENTS ---
+        let currentAccount = null;
+        const countDisplay = document.getElementById("countDisplay");
+        const statusDisplay = document.getElementById("status");
+        const connectWalletBtn = document.getElementById("connectWalletBtn");
+        const walletInfo = document.getElementById("walletInfo");
+        const incrementBtn = document.getElementById("incrementBtn");
+
+
+        /**
+         * Reads the current count from the contract using the Public RPC.
+         */
+        async function getCount() {
+            // No changes needed here, as the public call works!
+            statusDisplay.textContent = "Fetching count...";
+
+            try {
+                const response = await fetch(FUJI_RPC_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'eth_call',
+                        params: [{
+                            to: CONTRACT_ADDRESS,
+                            data: GET_COUNT_SIG 
+                        }, 'latest']
+                    })
+                });
+                
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error.message || "RPC call failed.");
+                }
+                
+                const count = BigInt(data.result);
+                countDisplay.textContent = count.toString();
+                statusDisplay.textContent = "Current count loaded. Click the button to connect.";
+
+            } catch (error) {
+                console.error("RPC Error:", error);
+                statusDisplay.textContent = 'Error loading count. Check URL/Console.';
+                countDisplay.textContent = 'Error';
+            }
+        }
+
+        /** This function guides the user to the standalone version. */
+        function redirectToWallet() {
+            if (DAPP_PUBLIC_URL === "PASTE_YOUR_PUBLIC_HOSTED_DAPP_URL_HERE") {
+                alert("CONFIGURATION ERROR: Please replace the DAPP_PUBLIC_URL placeholder in the code with your actual hosted URL.");
+                statusDisplay.innerHTML = '<span class="warning">Configuration Error: Update DAPP_PUBLIC_URL in script.</span>';
+                return;
+            }
+
+            // Provide a link and open it in a new tab
+            statusDisplay.innerHTML = `
+                <p class="warning">Wallet connection is blocked in this window.</p>
+                <p>Please click the link below to open the DApp in a new, working tab:</p>
+                <a href="${DAPP_PUBLIC_URL}" target="_blank" style="font-weight: bold; color: #007bff;">Open DApp in New Tab</a>
+            `;
+            
+            // We open the new window/tab to trigger the connection
+            window.open(DAPP_PUBLIC_URL, '_blank');
+
+            connectWalletBtn.disabled = true;
+            connectWalletBtn.textContent = 'Link Provided';
+        }
+
+
+        // 4. --- EVENT LISTENERS and Initial Load ---
+        connectWalletBtn.addEventListener("click", redirectToWallet);
+        // Remove increment listener from the embedded version, as it will never work here.
+        incrementBtn.disabled = true;
+
+
+        // Initial load of the count using Public RPC
+        getCount(); 
+    </script>
+</body>
+</html>
