@@ -10,7 +10,7 @@
         .container { max-width: 400px; margin: 40px auto; padding: 25px; background: white; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
         button { padding: 12px 25px; margin: 10px 5px; cursor: pointer; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; transition: background-color 0.3s, transform 0.1s; }
         button:active { transform: scale(0.98); }
-        #connectWalletBtn { background-color: #dc3545; color: white; } /* Changed color to red to indicate link */
+        #connectWalletBtn { background-color: #007bff; color: white; } /* Blue for the final live version */
         #incrementBtn { background-color: #28a745; color: white; font-size: 24px; }
         button:disabled { background-color: #ccc; cursor: not-allowed; }
         #status { margin-top: 20px; font-weight: 500; color: #555; min-height: 20px; }
@@ -23,7 +23,7 @@
     <div class="container">
         <h1>Fuji Counter DApp</h1>
 
-        <button id="connectWalletBtn">CLICK TO CONNECT WALLET</button>
+        <button id="connectWalletBtn">CONNECT WALLET</button>
         <p class="info" id="walletInfo">Wallet Status: Disconnected.</p>
         <hr>
 
@@ -45,9 +45,8 @@
         const FUJI_CHAIN_ID_HEX = '0xa869';
         const FUJI_RPC_URL = 'https://api.avax-test.network/ext/bc/C/rpc';
         
-        // **!!! CRITICAL: PASTE YOUR PUBLIC HOSTED URL HERE !!!**
-        // This is the public URL of the "dapp.html" file you saved/hosted.
-        const DAPP_PUBLIC_URL = "PASTE_YOUR_PUBLIC_HOSTED_DAPP_URL_HERE"; 
+        // **!!! CRITICAL: LIVE URL INSERTED !!!**
+        const DAPP_PUBLIC_URL = "https://damianwgriggs.github.io/my-counter-dapp/"; 
         
         // 2. --- STATE VARIABLES & DOM ELEMENTS ---
         let currentAccount = null;
@@ -56,13 +55,60 @@
         const connectWalletBtn = document.getElementById("connectWalletBtn");
         const walletInfo = document.getElementById("walletInfo");
         const incrementBtn = document.getElementById("incrementBtn");
+        
+        // 3. --- CORE FUNCTIONS ---
+        
+        // Helper function for the initial page state where wallet communication is allowed
+        async function runDAppLogic() {
+            if (typeof window.ethereum === 'undefined') {
+                walletInfo.textContent = 'Wallet not found. Please install MetaMask.';
+                connectWalletBtn.disabled = true;
+                return;
+            }
+
+            // Check if we are running in the main window (not a Google Site iframe)
+            if (window.self !== window.top) {
+                // If we detect we are in an iframe, switch to the redirect logic
+                connectWalletBtn.removeEventListener("click", runDAppLogic); // Remove existing listener
+                connectWalletBtn.addEventListener("click", redirectToWallet);
+                connectWalletBtn.textContent = 'CLICK TO CONNECT WALLET';
+                connectWalletBtn.style.backgroundColor = '#dc3545';
+                statusDisplay.innerHTML = 'Wallet connection requires clicking the button.';
+                return;
+            }
+            
+            // --- Normal DApp Flow (Runs only in the unsandboxed tab) ---
+            try {
+                statusDisplay.textContent = "Connecting to wallet...";
+                
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                currentAccount = accounts[0];
+
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                const isOnFuji = await checkNetwork(chainId);
+                
+                if (isOnFuji) {
+                    walletInfo.textContent = `Connected: ${currentAccount.substring(0, 6)}...${currentAccount.slice(-4)}`;
+                    connectWalletBtn.textContent = 'Wallet Connected';
+                    connectWalletBtn.disabled = true;
+                    incrementBtn.disabled = false;
+                    statusDisplay.textContent = 'Ready! Click Increment.';
+                    await getCount(); 
+                } else {
+                    statusDisplay.textContent = 'Please approve the network change in your wallet and click Connect again.';
+                }
+
+            } catch (error) {
+                console.error("Connection failed:", error);
+                statusDisplay.textContent = 'Connection failed. Check console.';
+                connectWalletBtn.disabled = false;
+                incrementBtn.disabled = true;
+            }
+        }
 
 
-        /**
-         * Reads the current count from the contract using the Public RPC.
-         */
+        /** Reads the current count from the contract using the Public RPC. */
         async function getCount() {
-            // No changes needed here, as the public call works!
             statusDisplay.textContent = "Fetching count...";
 
             try {
@@ -73,58 +119,101 @@
                         jsonrpc: '2.0',
                         id: 1,
                         method: 'eth_call',
-                        params: [{
-                            to: CONTRACT_ADDRESS,
-                            data: GET_COUNT_SIG 
-                        }, 'latest']
+                        params: [{ to: CONTRACT_ADDRESS, data: GET_COUNT_SIG }, 'latest']
                     })
                 });
                 
                 const data = await response.json();
-
-                if (data.error) {
-                    throw new Error(data.error.message || "RPC call failed.");
-                }
+                if (data.error) throw new Error(data.error.message || "RPC call failed.");
                 
                 const count = BigInt(data.result);
                 countDisplay.textContent = count.toString();
-                statusDisplay.textContent = "Current count loaded. Click the button to connect.";
+                if (!currentAccount) {
+                    statusDisplay.textContent = "Current count loaded. Connect wallet to increment.";
+                }
 
             } catch (error) {
                 console.error("RPC Error:", error);
-                statusDisplay.textContent = 'Error loading count. Check URL/Console.';
+                statusDisplay.textContent = 'Error: Failed to load count.';
                 countDisplay.textContent = 'Error';
             }
         }
 
-        /** This function guides the user to the standalone version. */
-        function redirectToWallet() {
-            if (DAPP_PUBLIC_URL === "PASTE_YOUR_PUBLIC_HOSTED_DAPP_URL_HERE") {
-                alert("CONFIGURATION ERROR: Please replace the DAPP_PUBLIC_URL placeholder in the code with your actual hosted URL.");
-                statusDisplay.innerHTML = '<span class="warning">Configuration Error: Update DAPP_PUBLIC_URL in script.</span>';
+        /** Handles network checking and switching. */
+        async function checkNetwork(chainId) {
+            if (chainId !== FUJI_CHAIN_ID_HEX) {
+                const fujiParams = {
+                    chainId: FUJI_CHAIN_ID_HEX,
+                    chainName: 'Avalanche Fuji C-Chain',
+                    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+                    rpcUrls: [FUJI_RPC_URL],
+                    blockExplorerUrls: ['https://testnet.snowtrace.io']
+                };
+                
+                try {
+                    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: FUJI_CHAIN_ID_HEX }] });
+                    return false; 
+                } catch (e) {
+                    if (e.code === 4902) { 
+                        await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [fujiParams] });
+                        return false; 
+                    }
+                    throw e;
+                }
+            }
+            return true;
+        }
+
+
+        /** Sends the transaction to increment the counter. */
+        async function increment() {
+            if (!currentAccount) {
+                statusDisplay.textContent = "Please connect your wallet first.";
                 return;
             }
+            
+            incrementBtn.disabled = true; 
+            statusDisplay.textContent = 'Sending transaction... Awaiting wallet approval.';
 
-            // Provide a link and open it in a new tab
+            try {
+                const txHash = await window.ethereum.request({
+                    method: 'eth_sendTransaction',
+                    params: [{ from: currentAccount, to: CONTRACT_ADDRESS, data: INCREMENT_SIG }]
+                });
+
+                statusDisplay.textContent = `Transaction sent! Hash: ${txHash.substring(0, 10)}... Please wait a moment.`;
+                
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                statusDisplay.textContent = 'Transaction sent. Checking new count...';
+                await getCount();
+
+            } catch (error) {
+                console.error("Transaction failed:", error);
+                statusDisplay.textContent = (error.code === 4001) ? 'Transaction rejected by user.' : 'Transaction failed. See console.';
+            } finally {
+                incrementBtn.disabled = false;
+            }
+        }
+
+        /** This function guides the user to the standalone version (only for embedded use). */
+        function redirectToWallet() {
+            // Note: This function is only attached when the DApp detects it is in an iFrame (e.g., Google Sites)
             statusDisplay.innerHTML = `
-                <p class="warning">Wallet connection is blocked in this window.</p>
-                <p>Please click the link below to open the DApp in a new, working tab:</p>
+                <p class="warning">Wallet connection requires a new tab.</p>
+                <p>Please click the link below to open the DApp:</p>
                 <a href="${DAPP_PUBLIC_URL}" target="_blank" style="font-weight: bold; color: #007bff;">Open DApp in New Tab</a>
             `;
             
-            // We open the new window/tab to trigger the connection
             window.open(DAPP_PUBLIC_URL, '_blank');
-
             connectWalletBtn.disabled = true;
             connectWalletBtn.textContent = 'Link Provided';
         }
 
 
         // 4. --- EVENT LISTENERS and Initial Load ---
-        connectWalletBtn.addEventListener("click", redirectToWallet);
-        // Remove increment listener from the embedded version, as it will never work here.
-        incrementBtn.disabled = true;
-
+        connectWalletBtn.addEventListener("click", runDAppLogic);
+        incrementBtn.addEventListener("click", increment);
 
         // Initial load of the count using Public RPC
         getCount(); 
